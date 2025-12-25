@@ -1,0 +1,16 @@
+fastapi==0.109.0
+uvicorn==0.27.0
+python-multipart==0.0.6
+torch>=2.1.0
+transformers>=4.37.0
+accelerate>=0.26.0
+pillow>=10.2.0
+qwen-vl-utils>=0.0.1
+scipy
+bitsandbytes
+qwen-vl-utils
+scipy
+bitsandbytes
+torchvision
+google-generativeai
+python-dotenv
