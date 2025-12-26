@@ -1,6 +1,6 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import uvicorn
 from model_loader import ModelLoader
 from PIL import Image
@@ -63,6 +63,14 @@ class MarkingResponse(BaseModel):
     marks_awarded: int
     lessons_to_review: Optional[str] = None
 
+class BatchExtractionItem(BaseModel):
+    id: str
+    extracted_text: str
+
+class BatchExtractionResponse(BaseModel):
+    results: List[BatchExtractionItem]
+    total_processed: int
+
 @app.on_event("startup")
 async def startup_event():
     # Preload model on startup to avoid delay on first request
@@ -81,6 +89,65 @@ async def extract_text(file: UploadFile = File(...), subject: Optional[str] = No
         extracted = model_loader.predict(image, prompt)
         
         return ExtractionResponse(extracted_text=extracted)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/extract-batch", response_model=BatchExtractionResponse)
+async def extract_text_batch(
+    files: List[UploadFile] = File(...),
+    ids: str = Form(...),  # Comma-separated IDs matching each file
+    subject: Optional[str] = Form(None)
+):
+    """
+    Batch extract text from multiple images in a single request.
+    
+    - files: List of image files to process
+    - ids: Comma-separated list of IDs (e.g., "q1,q2,q3") matching each file
+    - subject: Optional subject for specialized extraction
+    
+    This reduces API overhead by processing multiple images together.
+    """
+    try:
+        id_list = [id.strip() for id in ids.split(",")]
+        
+        if len(files) != len(id_list):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Mismatch: {len(files)} files but {len(id_list)} IDs provided"
+            )
+        
+        if len(files) > 20:
+            raise HTTPException(
+                status_code=400,
+                detail="Maximum 20 images per batch request"
+            )
+        
+        results = []
+        prompt = get_extraction_prompt(subject)
+        
+        for file, item_id in zip(files, id_list):
+            try:
+                contents = await file.read()
+                image = Image.open(io.BytesIO(contents))
+                extracted = model_loader.predict(image, prompt)
+                
+                results.append(BatchExtractionItem(
+                    id=item_id,
+                    extracted_text=extracted
+                ))
+            except Exception as e:
+                # Add error result but continue processing other images
+                results.append(BatchExtractionItem(
+                    id=item_id,
+                    extracted_text=f"[ERROR: {str(e)}]"
+                ))
+        
+        return BatchExtractionResponse(
+            results=results,
+            total_processed=len(results)
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
