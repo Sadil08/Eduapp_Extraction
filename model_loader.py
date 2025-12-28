@@ -53,13 +53,7 @@ class ModelLoader:
         
         # Prepare inputs
         inputs = [prompt_text]
-        
-        # Check if image_input is a valid PIL Image and not a dummy
-        # main.py passes a dummy 10x10 white image for text-only requests
-        # We can detect if it's "dummy" content-wise or just pass it to Gemini
-        # Gemini handles text+image fine.
-        # But if it's the 10x10 white dummy from main.py intended for text-only marking,
-        # we might want to omit it to save bandwidth/confusion, although 10x10 is tiny.
+        image_included = False
         
         if isinstance(image_input, Image.Image):
              # Simple heuristic: if it's the dummy 10x10 white image, skip it
@@ -68,11 +62,26 @@ class ModelLoader:
                 pass
             else:
                 inputs.append(image_input)
+                image_included = True
         
         try:
             response = model.generate_content(inputs)
-            return response.text
+            
+            # Extract usage metadata from response
+            usage_metadata = {
+                'prompt_token_count': getattr(response.usage_metadata, 'prompt_token_count', 0),
+                'candidates_token_count': getattr(response.usage_metadata, 'candidates_token_count', 0),
+                'total_token_count': getattr(response.usage_metadata, 'total_token_count', 0),
+                'image_included': image_included
+            }
+            
+            return response.text, usage_metadata
         except Exception as e:
-            # Handle potential API errors (e.g. valid model name issues)
-            # If the header model name was wrong despite configuration check
-            return f"Error generating content: {e}"
+            # Handle potential API errors
+            error_metadata = {
+                'prompt_token_count': 0,
+                'candidates_token_count': 0,
+                'total_token_count': 0,
+                'image_included': image_included
+            }
+            return f"Error generating content: {e}", error_metadata

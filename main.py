@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 import uvicorn
 from model_loader import ModelLoader
+from token_logger import token_logger
 from PIL import Image
 import io
 
@@ -33,15 +34,48 @@ SUBJECT_PROMPTS = {
 - Extract all questions and descriptive content"""
 }
 
-def get_extraction_prompt(subject_name: Optional[str] = None, base_instruction: str = ""):
-    """Get subject-specific extraction prompt or generic fallback"""
-    if subject_name and subject_name in SUBJECT_PROMPTS:
-        return SUBJECT_PROMPTS[subject_name] + (f"\n\n{base_instruction}" if base_instruction else "")
+def get_extraction_prompt(subject_name: Optional[str] = None, lesson_name: Optional[str] = None, doc_type: str = "question"):
+    """
+    Get context-primed extraction prompt
     
-    # Generic fallback
-    return f"""Extract absolutely all text, tables, and mathematical formulas from this image, including any questions asked.
-Output mathematical formulas in LaTeX format. Do not add any conversational text, just the extracted content.
-{base_instruction}"""
+    Args:
+        subject_name: Subject name (e.g., "Mathematics")
+        lesson_name: Lesson name (e.g., "Trigonometry", "Calculus")
+        doc_type: Type of document - "question", "modelanswer", or "handwritten"
+    """
+    context_prefix = ""
+    
+    # Build context information
+    if subject_name or lesson_name:
+        context_parts = []
+        if subject_name:
+            context_parts.append(f"Subject: {subject_name}")
+        if lesson_name:
+            context_parts.append(f"Lesson: {lesson_name}")
+        context_prefix = f"Context: {', '.join(context_parts)}\n\n"
+    
+    # Get base subject-specific prompt
+    base_prompt = ""
+    if subject_name and subject_name in SUBJECT_PROMPTS:
+        base_prompt = SUBJECT_PROMPTS[subject_name]
+    else:
+        base_prompt = """Extract absolutely all text, tables, and mathematical formulas from this image.
+Output mathematical formulas in LaTeX format. Do not add any conversational text, just the extracted content."""
+    
+    # Add handwritten-specific instructions
+    if doc_type == "handwritten":
+        handwritten_instructions = """
+**CRITICAL - Handwritten Student Answer:**
+- Transcribe EXACTLY what is written
+- **DO NOT correct mathematical errors or logical mistakes**
+- If handwriting is unclear, infer the most likely characters based on the context above
+- Preserve the student's original work and intent, including any mistakes
+- This is for grading purposes - we need the student's actual answer, not a corrected version"""
+        return context_prefix + handwritten_instructions + "\n\n" + base_prompt
+    
+    # For questions and model answers, just use context + base prompt
+    return context_prefix + base_prompt
+
 
 
 app = FastAPI(title="EduApp AI Service")
@@ -78,15 +112,45 @@ async def startup_event():
     pass
 
 @app.post("/extract", response_model=ExtractionResponse)
-async def extract_text(file: UploadFile = File(...), subject: Optional[str] = None):
+async def extract_text(
+    file: UploadFile = File(...), 
+    subject: Optional[str] = Form(default=None),
+    lesson: Optional[str] = Form(default=None),
+    docType: Optional[str] = Form(default="question")
+):
     try:
+        # DEBUG: Log received parameters with VISIBLE formatting
+        print("=" * 60)
+        print("[EXTRACTION DEBUG] === RECEIVED PARAMS ===")
+        print(f"  subject: '{subject}' (type: {type(subject).__name__})")
+        print(f"  lesson:  '{lesson}' (type: {type(lesson).__name__})")
+        print(f"  docType: '{docType}' (type: {type(docType).__name__})")
+        print("=" * 60)
+        
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
         
-        # Use subject-specific prompt for better extraction
-        prompt = get_extraction_prompt(subject)
+        # Use context-primed prompt for better extraction
+        prompt = get_extraction_prompt(subject, lesson, docType if docType else "question")
         
-        extracted = model_loader.predict(image, prompt)
+        # DEBUG: Log the FULL generated prompt
+        print("[EXTRACTION DEBUG] === FULL PROMPT ===")
+        print(prompt)
+        print("=" * 60)
+        
+        extracted, usage = model_loader.predict(image, prompt)
+        
+        # Log token usage
+        token_logger.log_usage(
+            operation="extract",
+            input_tokens=usage['prompt_token_count'],
+            output_tokens=usage['candidates_token_count'],
+            doc_type=docType or "question",
+            subject=subject,
+            lesson=lesson,
+            image_included=usage['image_included'],
+            batch_size=1
+        )
         
         return ExtractionResponse(extracted_text=extracted)
     except Exception as e:
@@ -96,18 +160,26 @@ async def extract_text(file: UploadFile = File(...), subject: Optional[str] = No
 async def extract_text_batch(
     files: List[UploadFile] = File(...),
     ids: str = Form(...),  # Comma-separated IDs matching each file
-    subject: Optional[str] = Form(None)
+    contexts: Optional[str] = Form(None),  # JSON mapping id -> {subject, lesson, docType}
+    subject: Optional[str] = Form(None),  # Fallback if contexts not provided
+    lesson: Optional[str] = Form(None),  # Fallback if contexts not provided
+    docType: Optional[str] = Form(default="question")  # Fallback if contexts not provided
 ):
     """
-    Batch extract text from multiple images in a single request.
+    Batch extract text from multiple images in a single request with per-image context.
     
     - files: List of image files to process
     - ids: Comma-separated list of IDs (e.g., "q1,q2,q3") matching each file
-    - subject: Optional subject for specialized extraction
+    - contexts: Optional JSON string mapping each ID to its context:
+        Example: '{"q1": {"subject": "Mathematics", "lesson": "Trigonometry", "docType": "question"},
+                   "q2": {"subject": "Physics", "lesson": "Mechanics", "docType": "question"}}'
+    - subject, lesson, docType: Fallback values if contexts not provided (all images use same context)
     
     This reduces API overhead by processing multiple images together.
     """
     try:
+        import json
+        
         id_list = [id.strip() for id in ids.split(",")]
         
         if len(files) != len(id_list):
@@ -122,14 +194,45 @@ async def extract_text_batch(
                 detail="Maximum 20 images per batch request"
             )
         
+        # Parse contexts if provided
+        context_map = {}
+        if contexts:
+            try:
+                context_map = json.loads(contexts)
+            except json.JSONDecodeError as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid JSON in contexts parameter: {str(e)}"
+                )
+        
         results = []
-        prompt = get_extraction_prompt(subject)
+        total_input_tokens = 0
+        total_output_tokens = 0
         
         for file, item_id in zip(files, id_list):
             try:
+                # Get context for this specific image
+                if item_id in context_map:
+                    ctx = context_map[item_id]
+                    img_subject = ctx.get("subject", subject)
+                    img_lesson = ctx.get("lesson", lesson)
+                    img_docType = ctx.get("docType", docType if docType else "question")
+                else:
+                    # Use fallback values
+                    img_subject = subject
+                    img_lesson = lesson
+                    img_docType = docType if docType else "question"
+                
+                # Generate prompt for this specific image
+                prompt = get_extraction_prompt(img_subject, img_lesson, img_docType)
+                
                 contents = await file.read()
                 image = Image.open(io.BytesIO(contents))
-                extracted = model_loader.predict(image, prompt)
+                extracted, usage = model_loader.predict(image, prompt)
+                
+                # Aggregate token usage
+                total_input_tokens += usage['prompt_token_count']
+                total_output_tokens += usage['candidates_token_count']
                 
                 results.append(BatchExtractionItem(
                     id=item_id,
@@ -141,6 +244,18 @@ async def extract_text_batch(
                     id=item_id,
                     extracted_text=f"[ERROR: {str(e)}]"
                 ))
+        
+        # Log aggregated batch usage
+        token_logger.log_usage(
+            operation="extract_batch",
+            input_tokens=total_input_tokens,
+            output_tokens=total_output_tokens,
+            doc_type=docType or "question",
+            subject=subject,  # Use fallback subject for logging
+            lesson=lesson,    # Use fallback lesson for logging
+            image_included=True,
+            batch_size=len(results)
+        )
         
         return BatchExtractionResponse(
             results=results,
@@ -191,7 +306,19 @@ async def mark_answer(request: MarkingRequest):
         
         dummy_image = Image.new('RGB', (10, 10), color='white')
         
-        response_text = model_loader.predict(dummy_image, prompt)
+        response_text, usage = model_loader.predict(dummy_image, prompt)
+        
+        # Log token usage for marking
+        token_logger.log_usage(
+            operation="mark",
+            input_tokens=usage['prompt_token_count'],
+            output_tokens=usage['candidates_token_count'],
+            doc_type="marking",
+            subject=None,
+            lesson=None,
+            image_included=False,
+            batch_size=1
+        )
         
         # Parse JSON from response (basic parsing for now, assuming model behaves)
         # In production, use structured output parsing or regex
