@@ -111,6 +111,10 @@ async def startup_event():
     # model_loader.load_model() # Commented out for dev speed, uncomment for prod
     pass
 
+@app.get("/")
+async def health_check():
+    return {"status": "healthy", "service": "EduApp AI Service"}
+
 @app.post("/extract", response_model=ExtractionResponse)
 async def extract_text(
     file: UploadFile = File(...), 
