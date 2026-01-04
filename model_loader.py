@@ -24,7 +24,7 @@ class ModelLoader:
                 genai.configure(api_key=self._api_key)
                 
                 # Using the specific model requested.
-                model_name = "gemini-2.5-flash" 
+                model_name = "gemini-1.5-flash" 
                 
                 # Check available models to be safe? No, just try to list or default
                 # But '2.5' sounds like a user typo or very new.
