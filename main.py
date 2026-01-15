@@ -83,19 +83,14 @@ app = FastAPI(title="EduApp AI Service")
 # Initialize model loader
 model_loader = ModelLoader.get_instance()
 
-class MarkingRequest(BaseModel):
-    question_text: str
-    model_answer_text: Optional[str] = None
-    student_answer_text: str
-    total_marks: int
+
+
 
 class ExtractionResponse(BaseModel):
     extracted_text: str
 
-class MarkingResponse(BaseModel):
-    feedback: str
-    marks_awarded: int
-    lessons_to_review: Optional[str] = None
+
+
 
 class BatchExtractionItem(BaseModel):
     id: str
@@ -266,85 +261,8 @@ async def extract_text_batch(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/mark", response_model=MarkingResponse)
-async def mark_answer(request: MarkingRequest):
-    try:
-        # Construct a prompt for the model to act as a strict examiner
-        prompt = f"""
-        You are an expert academic examiner. Grade the student's answer based on the question and the model answer (if provided).
-        
-        Question: {request.question_text}
-        
-        Model Answer: {request.model_answer_text if request.model_answer_text else 'N/A'}
-        
-        Student Answer: {request.student_answer_text}
-        
-        Total Marks Available: {request.total_marks}
-        
-        Task:
-        1. Compare the student's answer with the model answer/question requirements.
-        2. Assign a mark out of {request.total_marks}.
-        3. Provide constructive feedback.
-        4. Suggest lessons or topics to review if the answer is incorrect.
-        
-        Output Format (JSON):
-        {{
-            "marks": <int>,
-            "feedback": "<string>",
-            "lessons_to_review": "<string>"
-        }}
-        """
-        
-        # We use the same model for text generation logic, passing a dummy image or using a text-only method if supported.
-        # Qwen2.5-VL allows text-only input if we just don't pass 'image'.
-        # However, our loader is built for VL. We might need a dummy image or a separate method.
-        # For simplicity in this iteration, we'll assume we might pass a blank image or handle text-only.
-        # Let's adjust ModelLoader to handle text-only if image is None.
-        
-        # Update: We will treat this as a pure text generation task for now, assuming the model supports it.
-        # If Qwen VL *requires* an image, we can generate a 1x1 white pixel image.
-        
-        dummy_image = Image.new('RGB', (10, 10), color='white')
-        
-        response_text, usage = model_loader.predict(dummy_image, prompt)
-        
-        # Log token usage for marking
-        token_logger.log_usage(
-            operation="mark",
-            input_tokens=usage['prompt_token_count'],
-            output_tokens=usage['candidates_token_count'],
-            doc_type="marking",
-            subject=None,
-            lesson=None,
-            image_included=False,
-            batch_size=1
-        )
-        
-        # Parse JSON from response (basic parsing for now, assuming model behaves)
-        # In production, use structured output parsing or regex
-        import json
-        import re
-        
-        # Try to find JSON block
-        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(0)
-            data = json.loads(json_str)
-            return MarkingResponse(
-                marks_awarded=data.get("marks", 0),
-                feedback=data.get("feedback", "No feedback provided"),
-                lessons_to_review=data.get("lessons_to_review", "")
-            )
-        else:
-            # Fallback if specific formatting failed
-            return MarkingResponse(
-                marks_awarded=0,
-                feedback=response_text,
-                lessons_to_review=""
-            )
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

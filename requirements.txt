@@ -12,5 +12,5 @@ qwen-vl-utils
 scipy
 bitsandbytes
 torchvision
-google-generativeai
+google-generativeai>=0.7.2
 python-dotenv
