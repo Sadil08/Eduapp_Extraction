@@ -1,0 +1,14 @@
+{
+    "python.defaultInterpreterPath": "c:\\Users\\Asus\\onedrive\\desktop\\Eduapp\\Eduapp_Extraction\\venv\\Scripts\\python.exe",
+    "python.analysis.typeCheckingMode": "basic",
+    "python.linting.pylintEnabled": true,
+    "python.linting.enabled": true,
+    "python.analysis.extraPaths": [
+        "./",
+        "c:\\Users\\Asus\\onedrive\\desktop\\Eduapp\\Eduapp_Extraction\\venv\\Lib\\site-packages"
+    ],
+    "python.autoComplete.extraPaths": [
+        "./",
+        "c:\\Users\\Asus\\onedrive\\desktop\\Eduapp\\Eduapp_Extraction\\venv\\Lib\\site-packages"
+    ]
+}

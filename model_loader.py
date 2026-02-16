@@ -1,6 +1,8 @@
-import google.generativeai as genai
+import vertexai
+from vertexai.generative_models import GenerativeModel, Part, Image as VertexImage
 from PIL import Image
 import os
+import io
 
 from dotenv import load_dotenv
 
@@ -9,7 +11,9 @@ load_dotenv()
 class ModelLoader:
     _instance = None
     _model = None
-    _api_key = os.getenv("GEMINI_API_KEY")
+    _project_id = os.getenv("GCP_PROJECT_ID")
+    _location = os.getenv("GCP_LOCATION", "asia-south1")
+    _credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
     @classmethod
     def get_instance(cls):
@@ -19,25 +23,30 @@ class ModelLoader:
 
     def load_model(self):
         if self._model is None:
-            print("Configuring Gemini API...")
+            print("Configuring Vertex AI...")
             try:
-                genai.configure(api_key=self._api_key)
+                if not self._project_id:
+                    raise ValueError("GCP_PROJECT_ID environment variable is not set")
                 
+                # Initialize Vertex AI with project and location
+                vertexai.init(
+                    project=self._project_id,
+                    location=self._location
+                )
+
                 # Using the specific model requested.
                 model_name = "gemini-2.5-flash" 
-                
-                # Check available models to be safe? No, just try to list or default
-                # But '2.5' sounds like a user typo or very new.
-                # If it fails, I will catch it and try 1.5-flash.
-                
-                self._model = genai.GenerativeModel(model_name)
-                print(f"Gemini model '{model_name}' configured successfully.")
+
+                self._model = GenerativeModel(model_name)
+                print(f"Vertex AI model '{model_name}' configured successfully.")
+                print(f"  Project: {self._project_id}")
+                print(f"  Location: {self._location}")
             except Exception as e:
-                print(f"Error configuring Gemini: {e}")
+                print(f"Error configuring Vertex AI: {e}")
                 # Fallback purely for robustness
                 print("Attempting fallback to 'gemini-1.5-flash'...")
                 try:
-                    self._model = genai.GenerativeModel("gemini-1.5-flash")
+                    self._model = GenerativeModel("gemini-1.5-flash")
                     print("Fallback to gemini-1.5-flash successful.")
                 except Exception as ex:
                     print(f"Fallback failed: {ex}")
@@ -61,7 +70,12 @@ class ModelLoader:
                 # It's likely the dummy for text-only marking
                 pass
             else:
-                inputs.append(image_input)
+                # Convert PIL Image to Vertex AI Part
+                img_byte_arr = io.BytesIO()
+                image_input.save(img_byte_arr, format=image_input.format or 'PNG')
+                img_bytes = img_byte_arr.getvalue()
+                image_part = Part.from_data(data=img_bytes, mime_type="image/png")
+                inputs.append(image_part)
                 image_included = True
         
         try:
