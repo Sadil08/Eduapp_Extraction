@@ -28,21 +28,24 @@ class TokenLogger:
     def _ensure_log_file_exists(self):
         """Create log file with headers if it doesn't exist"""
         if not self.log_file.exists():
-            with open(self.log_file, 'w', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    'timestamp',
-                    'operation',
-                    'doc_type',
-                    'subject',
-                    'lesson',
-                    'input_tokens',
-                    'output_tokens',
-                    'total_tokens',
-                    'estimated_cost_usd',
-                    'image_included',
-                    'batch_size'
-                ])
+            try:
+                with open(self.log_file, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([
+                        'timestamp',
+                        'operation',
+                        'doc_type',
+                        'subject',
+                        'lesson',
+                        'input_tokens',
+                        'output_tokens',
+                        'total_tokens',
+                        'estimated_cost_usd',
+                        'image_included',
+                        'batch_size'
+                    ])
+            except Exception as e:
+                 print(f"[TOKEN LOGGER ERROR] Failed to initialize log file: {e}")
     
     @staticmethod
     def calculate_cost(input_tokens: int, output_tokens: int) -> float:
@@ -84,21 +87,24 @@ class TokenLogger:
             self.log_file = current_log_file
             self._ensure_log_file_exists()
         
-        with open(self.log_file, 'a', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                datetime.now().isoformat(),
-                operation,
-                doc_type,
-                subject or '',
-                lesson or '',
-                input_tokens,
-                output_tokens,
-                total_tokens,
-                f"{cost:.6f}",
-                image_included,
-                batch_size
-            ])
+        try:
+            with open(self.log_file, 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    datetime.now().isoformat(),
+                    operation,
+                    doc_type,
+                    subject or '',
+                    lesson or '',
+                    input_tokens,
+                    output_tokens,
+                    total_tokens,
+                    f"{cost:.6f}",
+                    image_included,
+                    batch_size
+                ])
+        except Exception as e:
+            print(f"[TOKEN LOGGER ERROR] Failed to write to log file: {e}")
         
         # Also log summary to console
         print(f"[TOKEN USAGE] {operation} | Tokens: {total_tokens} (in: {input_tokens}, out: {output_tokens}) | Cost: ${cost:.6f}")
