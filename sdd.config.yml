@@ -1,0 +1,23 @@
+project_name: AI_Extraction_Marking_service
+mode: brownfield-with-specs
+primary_language: python
+package_manager: pip
+repo: ""
+
+paths:
+  specs: ./specs
+  runs: ./runs
+
+agent:
+  model: claude-sonnet-4-6
+  judge_threshold: 0.85
+  max_judge_iterations: 1
+  max_spec_read_files: 6
+
+hooks:
+  on_pr_created: ""
+  on_judge_failed: ""
+
+github:
+  default_branch: development
+  base_branch: development

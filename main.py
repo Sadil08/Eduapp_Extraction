@@ -134,19 +134,13 @@ Output mathematical formulas in LaTeX format. Do not add any conversational text
 
 app = FastAPI(title="EduApp AI Service")
 
-# ── Rate limiting (slowapi) ───────────────────────────────────────────────
-# Caps request volume on the expensive AI endpoints so an attacker (or a
-# runaway loop) cannot exhaust GCP quota / run up unbounded Vertex AI bills.
-from rate_limiter import (
-    limiter,
-    _rate_limit_exceeded_handler,
-    RateLimitExceeded,
-    EXTRACT_RATE_LIMIT,
-    BATCH_RATE_LIMIT,
-    PAPER_RATE_LIMIT,
-)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# ── Rate limiting ─────────────────────────────────────────────────────────
+# Intentionally NOT done here. This service is internal-only: it requires the
+# backend's X-API-Key and must not be exposed publicly (bind to localhost / private
+# network). The Spring Boot backend is its SOLE client, so an IP-keyed limiter here
+# (every call shares the backend's IP) would throttle ALL users globally. Rate limiting
+# is enforced at the backend's public, per-user endpoints instead (WP-A1). To cap GCP
+# spend, add per-tenant budget alerts on Vertex AI (WP-A2.4).
 
 
 # ── Security headers ──────────────────────────────────────────────────────
@@ -216,7 +210,6 @@ async def health_check():
     return {"status": "healthy", "service": "EduApp AI Service"}
 
 @app.post("/extract", response_model=ExtractionResponse, dependencies=[Depends(require_api_key)])
-@limiter.limit(EXTRACT_RATE_LIMIT)
 async def extract_text(
     request: Request,
     file: UploadFile = File(...),
@@ -259,7 +252,6 @@ async def extract_text(
         raise HTTPException(status_code=500, detail="Extraction failed.")
 
 @app.post("/extract-batch", response_model=BatchExtractionResponse, dependencies=[Depends(require_api_key)])
-@limiter.limit(BATCH_RATE_LIMIT)
 async def extract_text_batch(
     request: Request,
     files: List[UploadFile] = File(...),
@@ -392,7 +384,6 @@ class PaperExtractionResponse(BaseModel):
 
 
 @app.post("/extract-paper", response_model=PaperExtractionResponse, dependencies=[Depends(require_api_key)])
-@limiter.limit(PAPER_RATE_LIMIT)
 async def extract_paper(
     request: Request,
     questionPaper: UploadFile = File(...),
