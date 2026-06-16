@@ -38,10 +38,16 @@ PRIMARY_MODEL = os.getenv("PRIMARY_MODEL", "gemini-2.5-flash")
 FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "gemini-1.5-flash")
 MODEL_MAX_RETRIES = _int_env("MODEL_MAX_RETRIES", 3)
 
+# ── Environment ───────────────────────────────────────────────────────────────
+# Anything other than development/local/test is treated as a deployed environment,
+# where authentication is MANDATORY (fail-closed — see auth.py).
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
+IS_PRODUCTION = ENVIRONMENT not in {"development", "dev", "local", "test"}
+
 # ── Authentication ────────────────────────────────────────────────────────────
 # Comma-separated accepted API keys (header: X-API-Key). If none are set, auth
 # is DISABLED so local dev still works — but a warning is logged at startup and
-# production deployments MUST set SERVICE_API_KEY.
+# production deployments MUST set SERVICE_API_KEY (enforced fail-closed in auth.py).
 SERVICE_API_KEYS = set(_csv_env("SERVICE_API_KEY"))
 AUTH_ENABLED = bool(SERVICE_API_KEYS)
 

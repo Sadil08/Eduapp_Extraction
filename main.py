@@ -1031,4 +1031,8 @@ IMPORTANT:
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    # SEC-1: bind localhost by default so the dev service isn't reachable off-box. In containers
+    # set HOST=0.0.0.0 but DO NOT publish the port to the host — keep it on a private network /
+    # firewalled, reachable only by the Spring backend (which authenticates with X-API-Key).
+    host = os.environ.get("HOST", "127.0.0.1")
+    uvicorn.run("main:app", host=host, port=port, reload=True)

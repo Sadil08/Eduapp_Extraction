@@ -20,9 +20,17 @@ import config
 
 logger = logging.getLogger("ai_service.auth")
 
+# SEC-1: fail-closed. In any deployed environment authentication is mandatory — refuse to
+# start if no key is configured, so the service is never reachable unauthenticated in prod.
+if config.IS_PRODUCTION and not config.AUTH_ENABLED:
+    raise RuntimeError(
+        "SERVICE_API_KEY must be set in a deployed environment (ENVIRONMENT="
+        f"{config.ENVIRONMENT!r}). Refusing to start with authentication disabled."
+    )
+
 if not config.AUTH_ENABLED:
     logger.warning(
-        "SERVICE_API_KEY is not set — API authentication is DISABLED. "
+        "SERVICE_API_KEY is not set — API authentication is DISABLED (development only). "
         "Set SERVICE_API_KEY (comma-separated for multiple) before deploying."
     )
 

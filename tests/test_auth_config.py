@@ -97,3 +97,29 @@ class TestAuth:
         auth = self._reload_auth(monkeypatch, "k1,k2")
         assert _run(auth.require_api_key("k1")) is None
         assert _run(auth.require_api_key("k2")) is None
+
+    # SEC-1: fail-closed — a deployed environment must refuse to start without a key.
+    def test_production_without_key_fails_closed(self, monkeypatch):
+        import config, auth
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.delenv("SERVICE_API_KEY", raising=False)
+        importlib.reload(config)
+        try:
+            with pytest.raises(RuntimeError):
+                importlib.reload(auth)
+        finally:
+            # restore dev env so later tests/imports aren't left in prod-without-key state
+            monkeypatch.setenv("ENVIRONMENT", "development")
+            importlib.reload(config)
+            importlib.reload(auth)
+
+    def test_production_with_key_starts(self, monkeypatch):
+        import config, auth
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv("SERVICE_API_KEY", "prodkey")
+        importlib.reload(config)
+        auth = importlib.reload(auth)
+        assert _run(auth.require_api_key("prodkey")) is None
+        monkeypatch.setenv("ENVIRONMENT", "development")
+        importlib.reload(config)
+        importlib.reload(auth)
