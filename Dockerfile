@@ -7,6 +7,8 @@ WORKDIR /app
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+# Fail closed: config.py treats anything except dev/local/test as production.
+ENV ENVIRONMENT=production
 
 # Install system dependencies (if any needed for Pillow or others)
 # RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*

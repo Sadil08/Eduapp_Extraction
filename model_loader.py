@@ -128,13 +128,9 @@ class ModelLoader:
         except Exception as e:
             # Handle potential API errors (after retries are exhausted)
             logger.error("generate_content failed after retries: %s", e)
-            error_metadata = {
-                'prompt_token_count': 0,
-                'candidates_token_count': 0,
-                'total_token_count': 0,
-                'image_included': image_included
-            }
-            return f"Error generating content: {e}", error_metadata
+            # Raise instead of returning the error as "extracted text": callers (and the Spring
+            # backend) would otherwise store the error string as a student's answer or a question.
+            raise RuntimeError("AI generation failed") from e
 
     def predict_with_parts(self, parts: list, prompt_text: str):
         """
@@ -170,10 +166,6 @@ class ModelLoader:
             return text, usage_metadata
         except Exception as e:
             logger.error("generate_content (parts) failed after retries: %s", e)
-            error_metadata = {
-                'prompt_token_count': 0,
-                'candidates_token_count': 0,
-                'total_token_count': 0,
-                'image_included': True
-            }
-            return f"Error generating content: {e}", error_metadata
+            # Raise instead of returning the error as "extracted text": callers (and the Spring
+            # backend) would otherwise store the error string as a student's answer or a question.
+            raise RuntimeError("AI generation failed") from e
